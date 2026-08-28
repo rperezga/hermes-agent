@@ -155,3 +155,32 @@ class TestSendTelegramStandaloneProxy:
         assert "get_updates_request" not in call_kwargs
         httpx_request_factory.assert_not_called()
         bot.send_message.assert_awaited_once()
+
+    def test_disable_notification_reaches_bot_api(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Silent standalone cron delivery must set the real Bot API flag."""
+        from tools.send_message_tool import _send_telegram
+
+        for var in (
+            "TELEGRAM_PROXY", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY",
+            "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setattr("gateway.run._gateway_runner_ref", lambda: None)
+        monkeypatch.setattr(sys, "platform", "linux")
+
+        bot = _make_bot()
+        bot_factory = MagicMock(return_value=bot)
+        _install_telegram_mock_with_request(
+            monkeypatch, bot_factory, MagicMock()
+        )
+
+        result = asyncio.run(
+            _send_telegram(
+                "tok", "123", "prueba SILENCIOSA", disable_notification=True
+            )
+        )
+
+        assert result["success"] is True
+        assert bot.send_message.await_args.kwargs["disable_notification"] is True
